@@ -1,3 +1,4 @@
+from locale import windows_locale
 import tensorflow as tf
 import numpy as np
 import librosa
@@ -80,7 +81,7 @@ def progress_bar(count, total, suffix=''):
     sys.stdout.write('[%s] %s/%s ...%s\r' % (bar, percents, total, suffix))
     sys.stdout.flush()
 
-def extract_from_f(r, seconds=1):
+def extract_from_f(r, second_model=False,bonus=False,seconds=1):
     """Extracts the mel-spectogram from the input file
     Args:
         filename (str): the name of the input file
@@ -92,106 +93,125 @@ def extract_from_f(r, seconds=1):
     # Read the data
     audio = r["audio"].numpy()
     fs = int(r["sample_rate"])
-
-    audio = audio[np.arange(0, audio.size, 2)]
+    print(audio.size)
+    if second_model:
+        audio = audio[np.arange(0, audio.size, 2)]
     audio /= np.max(np.abs(audio))
     audio = np.squeeze(audio)
-
     # Compute Short Time Fourier Transform
     stft = np.abs(librosa.stft(audio, win_length=1024, hop_length=512,
         center=True))
-    # Convert to Mel Spectogram
-    mel_spec = librosa.feature.melspectrogram(S=stft, sr=fs/2, n_mels=128)
-    # Take the natural logarithm of the Mel Spectogram
+    mel_spec = None
+    if second_model:
+        mel_spec = librosa.feature.melspectrogram(S=stft, sr=fs/2, n_mels=128)
+    else:
+        mel_spec = librosa.feature.melspectrogram(S=stft, sr=fs, n_mels=128)
     ln_mel_spec = np.log(mel_spec + np.finfo(float).eps)
-
-    seg_dur = 43 * seconds
-    spec_list = []
-    for idx in range(0, ln_mel_spec.shape[1] - seg_dur + 1, seg_dur):
-        spec_list.append(ln_mel_spec[:, idx : (idx + seg_dur)])
-    spec_list = np.array(spec_list)
-    spec_list = np.squeeze(spec_list)
-    mspecs = np.expand_dims(spec_list, axis=2)
-    features = {}
-    features["audio"] =  r["audio"]
-    features["mspec"]    = mspecs
-    features["labels"]   = int(r["instrument_family"])
-
-    return features
-
-
-
-
-
-
-train_x = []
-train_y = []
-count = 0
-total = 0
-print("preprocessing train")
-for r in datatrain:
-    count+=1
-    if int(r["instrument_family"]) != 9:
-        total+=1
-        feat = extract_from_f(r)
-        train_x.append(feat["mspec"])
-        train_y.append(feat["labels"])
-        progress_bar(count, 289205)
-
-    
-    
-
-val_x = []
-val_y = []
-count = 0
-total = 0
-print("preprocessing valid")
-
-for r in datavalid:
-    count+=1
-    if int(r["instrument_family"]) != 9:
-        total+=1
-        feat = extract_from_f(r)
-        val_x.append(feat["mspec"])
-        val_y.append(feat["labels"])
-        progress_bar(count, 12678)
+    if second_model:
+        seg_dur = 43 * seconds
+        spec_list = []
+        for idx in range(0, ln_mel_spec.shape[1] - seg_dur + 1, seg_dur):
+            spec_list.append(ln_mel_spec[:, idx : (idx + seg_dur)])
+        
+        spec_list = np.array(spec_list)
+        spec_list = np.squeeze(spec_list)    
+        mspecs = np.expand_dims(np.array(spec_list), axis=2)
+        features = {}
+        features["audio"] =  r["audio"]
+        features["mspec"]    = mspecs
+        features["labels"]   = r["instrument_family"]
+        return features
+    else:
+        mspecs = np.expand_dims( ln_mel_spec, axis=2)
+        features = {}
+        features["audio"] =  r["audio"]
+        features["mspec"]    = mspecs
+        classes = 11
+        if bonus:
+            classes=3
+            features["labels"]   = to_categorical(r["instrument_source"],classes)
+        else:
+            features["labels"]   = to_categorical(r["instrument_family"],classes)
+        return features
 
 
+if __name__ == "__main__":
+    second_model = True
+    bonus = False
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "second_model":
+            second_model = True
+        elif sys.argv[1] == "bonus":
+            bonus = True
 
-test_x = []
-test_y = []
-test_audio= []
-count = 0
-total = 0
-print("preprocessing test")
-for r in datatest:
-    count+=1
-    if int(r["instrument_family"] )!= 9:
-        total+=1
-        feat = extract_from_f(r)
-        test_x.append(feat["mspec"])
-        test_y.append(feat["labels"])
-        test_audio.append(feat["audio"])
-        progress_bar(count, 4096)
+    print(second_model,bonus)
+    train_x = []
+    train_y = []
+    """
+    count = 0
+    total = 0
+    print("preprocessing train")
+    for r in datatrain:
+        count+=1
+        if int(r["instrument_family"]) != 9:
+            total+=1
+            feat = extract_from_f(r,second_model=second_model,bonus=bonus)
+            train_x.append(feat["mspec"])
+            train_y.append(feat["labels"])
+            progress_bar(count, 289205)
+    sys.stdout.flush()
+    """
+    val_x = []
+    val_y = []
+    count = 0
+    total = 0
+    print("preprocessing valid")
 
+    for r in datavalid:
+        count+=1
+        if int(r["instrument_family"]) != 9:
+            total+=1
+            feat = extract_from_f(r,second_model=second_model,bonus=bonus)
+            val_x.append(feat["mspec"])
+            val_y.append(feat["labels"])
+            progress_bar(count, 12678)
+    sys.stdout.flush()
 
+    test_x = []
+    test_y = []
+    test_audio= []
+    count = 0
+    total = 0
+    print("preprocessing test")
+    for r in datatest:
+        count+=1
+        if int(r["instrument_family"] )!= 9:
+            total+=1
+            feat = extract_from_f(r,second_model=second_model,bonus=bonus)
+            test_x.append(feat["mspec"])
+            test_y.append(feat["labels"])
+            test_audio.append(feat["audio"])
+            progress_bar(count, 4096)
+    sys.stdout.flush()
 
-train_x = np.array(train_x)
-train_y = np.array(train_y)
-val_y = np.array(val_y)
-val_x = np.array(val_x)
+    train_x = np.array(train_x)
+    train_y = np.array(train_y)
+    val_y = np.array(val_y)
+    val_x = np.array(val_x)
+    test_y = np.array(test_y)
+    test_x = np.array(test_x)
+    test_audio = np.array(test_audio)
+    save_prev = ""
+    if second_model:
+        save_prev = "second_"
+    elif bonus:
+        save_prev = "bonus_"
+        
+    np.save(save_prev+"train_x",train_x)
+    np.save(save_prev+"train_y",train_y)
+    np.save(save_prev+"val_x",val_x)
+    np.save(save_prev+"val_y",val_y)
+    np.save(save_prev+"test_x",test_x)
+    np.save(save_prev+"test_y",test_y)
+    np.save("audio",test_audio)
 
-
-test_y = np.array(test_y)
-test_x = np.array(test_x)
-test_audio = np.array(test_audio)
-#print(train_x.shape,test_x.shape)
-
-np.save("train_x",train_x)
-np.save("train_y",train_y)
-np.save("val_x",val_x)
-np.save("val_y",val_y)
-
-np.save("test_x",test_x)
-np.save("test_y",test_y)
-np.save("test_audio",test_audio)
