@@ -91,8 +91,8 @@ def extract_from_f(r, second_model=False,bonus=False,seconds=1):
                          the mspec and the labels
     """
     # Read the data
-    audio = r["audio"].numpy()
     fs = int(r["sample_rate"])
+    audio = r["audio"].numpy().resize([fs * seconds]) # Resizes to only include the first 'seconds' seconds of audio
     print(audio.size)
     if second_model:
         audio = audio[np.arange(0, audio.size, 2)]
